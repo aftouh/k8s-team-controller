@@ -7,10 +7,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
+
+	teamClientSet "github.com/aftouh/k8s-sample-controller/pkg/client/clientset/versioned"
 )
 
 var (
-	kubeconfig = flag.String("kubeconfig", "", "Path to kubeconfig. Not need inside the cluster")
+	kubeconfig = flag.String("kubeconfig", "", "Path to kubeconfig. Not needed inside the cluster")
 )
 
 func init() {
@@ -38,5 +40,19 @@ func main() {
 	}
 	for _, item := range list.Items {
 		klog.Infoln(item.Name)
+	}
+
+	tClientSet, err := teamClientSet.NewForConfig(cfg)
+	if err != nil {
+		klog.Fatalf("Failed building team client: %s", err)
+	}
+
+	teams, err := tClientSet.AftouhV1().Teams("default").List(metav1.ListOptions{})
+	if err != nil {
+		klog.Fatalf("Failed getting team list. %s", err)
+	}
+
+	for _, item := range teams.Items {
+		klog.Infof("team name: %q", item.Spec.Name)
 	}
 }
