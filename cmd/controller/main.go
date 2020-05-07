@@ -9,6 +9,8 @@ import (
 
 	"github.com/aftouh/k8s-sample-controller/util/signals"
 
+	kubeinformers "k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 )
@@ -37,11 +39,20 @@ func main() {
 		klog.Fatalf("failed building team client. %s", err)
 	}
 
+	kClientSet, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		klog.Fatalf("failed building kubernetes client. %s", err)
+	}
+
 	stopChan := signals.StopChan()
 
 	tInfomerFactory := teamInformer.NewSharedInformerFactory(tClientSet, resyncPeriod)
+	kInformerFactory := kubeinformers.NewSharedInformerFactory(kClientSet, resyncPeriod)
 
-	controller := NewController(tClientSet, tInfomerFactory.Aftouh().V1().Teams())
+	controller := NewController(tClientSet,
+		kClientSet,
+		tInfomerFactory.Aftouh().V1().Teams(),
+		kInformerFactory.Core().V1().Namespaces())
 
 	tInfomerFactory.Start(stopChan)
 

@@ -6,7 +6,7 @@
 
 ## Motivation
 
-This project is created to build a sample of kubernetes controller for a CRD called `teams.aftouh.io`.  
+This project is created to build a sample of a kubernetes controller to manage a CRD called `teams.aftouh.io`.  
 It is inspired from this nice [sample controller](https://github.com/kubernetes/sample-controller) 🙏.
 
 ```yaml
@@ -34,7 +34,7 @@ Run controller locally:
 go run cmd/*.go -kubeconfig ~/.kube/config -v 5
 ```
 
-Run in a kubernetes the cluster:
+Run within a kubernetes cluster:
 
 ```bash
 # login to dockerhub

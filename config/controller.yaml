@@ -19,5 +19,5 @@ spec:
       serviceAccountName: aftouh-teams-controller
       containers:
         - name: tekton-pipelines-controller
-          image: ko://github.com/aftouh/k8s-sample-controller/cmd
+          image: ko://github.com/aftouh/k8s-sample-controller/cmd/controller
           args: ["-v", "5"]

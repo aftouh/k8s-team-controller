@@ -12,7 +12,7 @@ import (
 var stopCh = make(chan struct{})
 var once sync.Once
 
-//StopChan returns channel that is closes when receive one the these signals: syscall.SIGINT, syscall.SIGTERM
+//StopChan returns channel that is closed when receiving one the these signals: syscall.SIGINT, syscall.SIGTERM
 func StopChan() <-chan struct{} {
 	once.Do(func() {
 		signalCh := make(chan os.Signal, 2)
