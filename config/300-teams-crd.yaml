@@ -9,3 +9,4 @@ spec:
     kind: Team
     plural: teams
   scope: Namespaced
+  version: v1

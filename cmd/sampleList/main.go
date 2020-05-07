@@ -36,7 +36,7 @@ func main() {
 
 	list, err := clientSet.AppsV1().Deployments("tekton-pipelines").List(metav1.ListOptions{})
 	if err != nil {
-		klog.Fatalf("Failed fetching pods")
+		klog.Fatalf("Failed fetching deployments. %s", err)
 	}
 	for _, item := range list.Items {
 		klog.Infoln(item.Name)
@@ -44,7 +44,7 @@ func main() {
 
 	tClientSet, err := teamClientSet.NewForConfig(cfg)
 	if err != nil {
-		klog.Fatalf("Failed building team client: %s", err)
+		klog.Fatalf("Failed building team client. %s", err)
 	}
 
 	teams, err := tClientSet.AftouhV1().Teams("default").List(metav1.ListOptions{})

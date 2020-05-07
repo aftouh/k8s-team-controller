@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aftouh-teams-controller
+  namespace: aftouh-teams
+  labels:
+    app.kubernetes.io/name: aftouh-teams
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aftouh-teams-controller
+  template:
+    metadata:
+      labels:
+        app: aftouh-teams-controller
+    spec:
+      serviceAccountName: aftouh-teams-controller
+      containers:
+        - name: tekton-pipelines-controller
+          image: ko://github.com/aftouh/k8s-sample-controller/cmd
+          args: ["-v", "5"]

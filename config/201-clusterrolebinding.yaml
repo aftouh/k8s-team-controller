@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: aftouh-teams-controller-admin
+subjects:
+  - kind: ServiceAccount
+    name: aftouh-teams-controller
+    namespace: aftouh-teams
+roleRef:
+  kind: ClusterRole
+  name: aftouh-teams-admin
+  apiGroup: rbac.authorization.k8s.io
