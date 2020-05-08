@@ -12,8 +12,8 @@ type FakeAftouhV1 struct {
 	*testing.Fake
 }
 
-func (c *FakeAftouhV1) Teams(namespace string) v1.TeamInterface {
-	return &FakeTeams{c, namespace}
+func (c *FakeAftouhV1) Teams() v1.TeamInterface {
+	return &FakeTeams{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

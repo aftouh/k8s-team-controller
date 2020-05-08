@@ -15,8 +15,9 @@ import (
 	core "k8s.io/client-go/informers/core/v1"
 	coreListers "k8s.io/client-go/listers/core/v1"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -25,7 +26,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	coreTyped "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 const (
@@ -66,7 +67,7 @@ func NewController(tClientSet teamClientSet.Interface,
 
 	eventBrodcaster := record.NewBroadcaster()
 	eventBrodcaster.StartLogging(klog.Infof)
-	eventBrodcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: kClientSet.CoreV1().Events("")})
+	eventBrodcaster.StartRecordingToSink(&coreTyped.EventSinkImpl{Interface: kClientSet.CoreV1().Events("")})
 
 	tc := &TeamController{
 		kClientSet: kClientSet,
@@ -82,7 +83,7 @@ func NewController(tClientSet teamClientSet.Interface,
 		rqListerSynced: rqInformer.Informer().HasSynced,
 
 		queue:    workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		recorder: eventBrodcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "team-controller"}),
+		recorder: eventBrodcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "team-controller"}),
 	}
 
 	tInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -131,42 +132,67 @@ func (tc *TeamController) deleteTeam(obj interface{}) {
 }
 
 func (tc *TeamController) updateNamespace(old, cur interface{}) {
-	// oldT := old.(*aftouh.Team)
-	// curT := cur.(*aftouh.Team)
-	// klog.V(4).Infof("Updating team %s", oldT.Name)
-	// tc.enqueue(curT)
-	//TODO
-}
+	oldN := old.(*corev1.Namespace)
+	curN := cur.(*corev1.Namespace)
+	klog.V(4).Infof("Updating namespace %s", oldN.Name)
 
-func (tc *TeamController) deleteNamespace(obj interface{}) {
-	// t, ok := obj.(*aftouh.Team)
-	// if !ok {
-	// 	tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-	// 	if !ok {
-	// 		utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
-	// 		return
-	// 	}
-	// 	t, ok = tombstone.Obj.(*aftouh.Team)
-	// 	if !ok {
-	// 		utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Team %#v", obj))
-	// 		return
-	// 	}
-	// }
-	// klog.V(4).Infof("Deleting team %s", t.Name)
-	// tc.enqueue(t)
-
-	//TODO
-}
-
-func (tc *TeamController) enqueue(t *aftouh.Team) {
-	var key string
-	var err error
-
-	if key, err = cache.MetaNamespaceKeyFunc(t); err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", t, err))
+	//No modification made
+	if oldN.ResourceVersion == curN.ResourceVersion {
 		return
 	}
 
+	ownerRef := metav1.GetControllerOf(curN)
+	// If this object is not owned by a Team, we should not do anything more with it
+	if ownerRef == nil || ownerRef.Kind != "Team" {
+		return
+	}
+
+	team, err := tc.tLister.Get(ownerRef.Name)
+	if err != nil {
+		klog.V(4).Infof("ignoring orphaned namespace %q' of team %q", curN.GetSelfLink(), ownerRef.Name)
+		return
+	}
+
+	tc.enqueue(team)
+}
+
+func (tc *TeamController) deleteNamespace(obj interface{}) {
+	namespace, ok := obj.(*corev1.Namespace)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			return
+		}
+		namespace, ok = tombstone.Obj.(*corev1.Namespace)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Namespace %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting Namespace %s", namespace.Name)
+
+	ownerRef := metav1.GetControllerOf(namespace)
+	// If this object is not owned by a Team, we should not do anything more with it
+	if ownerRef == nil || ownerRef.Kind != "Team" {
+		return
+	}
+
+	team, err := tc.tLister.Get(ownerRef.Name)
+	if err != nil {
+		klog.V(4).Infof("ignoring orphaned namespace %q' of team %q", namespace.GetSelfLink(), ownerRef.Name)
+		return
+	}
+
+	tc.enqueue(team)
+}
+
+func (tc *TeamController) enqueue(t *aftouh.Team) {
+	key, err := cache.MetaNamespaceKeyFunc(t)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", t, err))
+		return
+	}
 	tc.queue.Add(key)
 }
 
@@ -217,12 +243,7 @@ func (tc *TeamController) syncHandler(key string) error {
 		klog.V(4).Infof("Finished syncing team %q (%v)", key, time.Since(startTime))
 	}()
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return fmt.Errorf("failed splitting key. %s", err)
-	}
-
-	team, err := tc.tLister.Teams(namespace).Get(name)
+	team, err := tc.tLister.Get(key)
 	if errors.IsNotFound(err) {
 		klog.V(2).Infof("Team %v has been deleted", key)
 		return nil

@@ -18,8 +18,8 @@ type AftouhV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *AftouhV1Client) Teams(namespace string) TeamInterface {
-	return newTeams(c, namespace)
+func (c *AftouhV1Client) Teams() TeamInterface {
+	return newTeams(c)
 }
 
 // NewForConfig creates a new AftouhV1Client for the given config.

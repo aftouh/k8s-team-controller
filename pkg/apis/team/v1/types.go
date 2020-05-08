@@ -6,6 +6,7 @@ import (
 )
 
 // +genclient
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 //Team defines team resource structure
@@ -30,6 +31,7 @@ type TeamSpec struct {
 // 	AvailableReplicas int32 `json:"availableReplicas"`
 // }
 
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // TeamList is a list of Team resources

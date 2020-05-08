@@ -8,5 +8,5 @@ spec:
   names:
     kind: Team
     plural: teams
-  scope: Namespaced
+  scope: Cluster
   version: v1

@@ -16,7 +16,7 @@ import (
 // TeamsGetter has a method to return a TeamInterface.
 // A group's client should implement this interface.
 type TeamsGetter interface {
-	Teams(namespace string) TeamInterface
+	Teams() TeamInterface
 }
 
 // TeamInterface has methods to work with Team resources.
@@ -35,14 +35,12 @@ type TeamInterface interface {
 // teams implements TeamInterface
 type teams struct {
 	client rest.Interface
-	ns     string
 }
 
 // newTeams returns a Teams
-func newTeams(c *AftouhV1Client, namespace string) *teams {
+func newTeams(c *AftouhV1Client) *teams {
 	return &teams{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -50,7 +48,6 @@ func newTeams(c *AftouhV1Client, namespace string) *teams {
 func (c *teams) Get(name string, options metav1.GetOptions) (result *v1.Team, err error) {
 	result = &v1.Team{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("teams").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -67,7 +64,6 @@ func (c *teams) List(opts metav1.ListOptions) (result *v1.TeamList, err error) {
 	}
 	result = &v1.TeamList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("teams").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -84,7 +80,6 @@ func (c *teams) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("teams").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -95,7 +90,6 @@ func (c *teams) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 func (c *teams) Create(team *v1.Team) (result *v1.Team, err error) {
 	result = &v1.Team{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("teams").
 		Body(team).
 		Do().
@@ -107,7 +101,6 @@ func (c *teams) Create(team *v1.Team) (result *v1.Team, err error) {
 func (c *teams) Update(team *v1.Team) (result *v1.Team, err error) {
 	result = &v1.Team{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("teams").
 		Name(team.Name).
 		Body(team).
@@ -119,7 +112,6 @@ func (c *teams) Update(team *v1.Team) (result *v1.Team, err error) {
 // Delete takes name of the team and deletes it. Returns an error if one occurs.
 func (c *teams) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("teams").
 		Name(name).
 		Body(options).
@@ -134,7 +126,6 @@ func (c *teams) DeleteCollection(options *metav1.DeleteOptions, listOptions meta
 		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("teams").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -147,7 +138,6 @@ func (c *teams) DeleteCollection(options *metav1.DeleteOptions, listOptions meta
 func (c *teams) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.Team, err error) {
 	result = &v1.Team{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("teams").
 		SubResource(subresources...).
 		Name(name).

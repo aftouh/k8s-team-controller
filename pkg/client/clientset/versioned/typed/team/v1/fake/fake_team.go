@@ -15,7 +15,6 @@ import (
 // FakeTeams implements TeamInterface
 type FakeTeams struct {
 	Fake *FakeAftouhV1
-	ns   string
 }
 
 var teamsResource = schema.GroupVersionResource{Group: "aftouh.io", Version: "v1", Resource: "teams"}
@@ -25,8 +24,7 @@ var teamsKind = schema.GroupVersionKind{Group: "aftouh.io", Version: "v1", Kind:
 // Get takes name of the team, and returns the corresponding team object, and an error if there is any.
 func (c *FakeTeams) Get(name string, options v1.GetOptions) (result *teamv1.Team, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(teamsResource, c.ns, name), &teamv1.Team{})
-
+		Invokes(testing.NewRootGetAction(teamsResource, name), &teamv1.Team{})
 	if obj == nil {
 		return nil, err
 	}
@@ -36,8 +34,7 @@ func (c *FakeTeams) Get(name string, options v1.GetOptions) (result *teamv1.Team
 // List takes label and field selectors, and returns the list of Teams that match those selectors.
 func (c *FakeTeams) List(opts v1.ListOptions) (result *teamv1.TeamList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(teamsResource, teamsKind, c.ns, opts), &teamv1.TeamList{})
-
+		Invokes(testing.NewRootListAction(teamsResource, teamsKind, opts), &teamv1.TeamList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -58,15 +55,13 @@ func (c *FakeTeams) List(opts v1.ListOptions) (result *teamv1.TeamList, err erro
 // Watch returns a watch.Interface that watches the requested teams.
 func (c *FakeTeams) Watch(opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(teamsResource, c.ns, opts))
-
+		InvokesWatch(testing.NewRootWatchAction(teamsResource, opts))
 }
 
 // Create takes the representation of a team and creates it.  Returns the server's representation of the team, and an error, if there is any.
 func (c *FakeTeams) Create(team *teamv1.Team) (result *teamv1.Team, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(teamsResource, c.ns, team), &teamv1.Team{})
-
+		Invokes(testing.NewRootCreateAction(teamsResource, team), &teamv1.Team{})
 	if obj == nil {
 		return nil, err
 	}
@@ -76,8 +71,7 @@ func (c *FakeTeams) Create(team *teamv1.Team) (result *teamv1.Team, err error) {
 // Update takes the representation of a team and updates it. Returns the server's representation of the team, and an error, if there is any.
 func (c *FakeTeams) Update(team *teamv1.Team) (result *teamv1.Team, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(teamsResource, c.ns, team), &teamv1.Team{})
-
+		Invokes(testing.NewRootUpdateAction(teamsResource, team), &teamv1.Team{})
 	if obj == nil {
 		return nil, err
 	}
@@ -87,14 +81,13 @@ func (c *FakeTeams) Update(team *teamv1.Team) (result *teamv1.Team, err error) {
 // Delete takes name of the team and deletes it. Returns an error if one occurs.
 func (c *FakeTeams) Delete(name string, options *v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(teamsResource, c.ns, name), &teamv1.Team{})
-
+		Invokes(testing.NewRootDeleteAction(teamsResource, name), &teamv1.Team{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeTeams) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(teamsResource, c.ns, listOptions)
+	action := testing.NewRootDeleteCollectionAction(teamsResource, listOptions)
 
 	_, err := c.Fake.Invokes(action, &teamv1.TeamList{})
 	return err
@@ -103,8 +96,7 @@ func (c *FakeTeams) DeleteCollection(options *v1.DeleteOptions, listOptions v1.L
 // Patch applies the patch and returns the patched team.
 func (c *FakeTeams) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *teamv1.Team, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(teamsResource, c.ns, name, pt, data, subresources...), &teamv1.Team{})
-
+		Invokes(testing.NewRootPatchSubresourceAction(teamsResource, name, pt, data, subresources...), &teamv1.Team{})
 	if obj == nil {
 		return nil, err
 	}
