@@ -1,7 +1,11 @@
 apiVersion: aftouh.io/v1
 kind: Team
 metadata:
-  name: team1
+  name: poc-dev
 spec:
-  name: teamOne
-  size: 3
+  name: poc
+  environment: dev
+  description: "poc is create creating a product called hello-world"
+  resourceQuota:
+    hard:
+      pods: "4"

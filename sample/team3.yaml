@@ -1,7 +1,0 @@
-apiVersion: aftouh.io/v1
-kind: Team
-metadata:
-  name: team3
-spec:
-  name: teamThree
-  size: 1

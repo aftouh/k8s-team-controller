@@ -28,7 +28,6 @@ func init() {
 const resyncPeriod = time.Second * 30
 
 func main() {
-
 	cfg, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
 		klog.Fatalf("failed loading config, %s", err)
@@ -52,9 +51,11 @@ func main() {
 	controller := NewController(tClientSet,
 		kClientSet,
 		tInfomerFactory.Aftouh().V1().Teams(),
-		kInformerFactory.Core().V1().Namespaces())
+		kInformerFactory.Core().V1().Namespaces(),
+		kInformerFactory.Core().V1().ResourceQuotas())
 
 	tInfomerFactory.Start(stopChan)
+	kInformerFactory.Start(stopChan)
 
 	if err := controller.Run(2, stopChan); err != nil {
 		klog.Fatalf("failed starting team controller. %s", err)

@@ -1,6 +1,7 @@
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -16,10 +17,12 @@ type Team struct {
 	//Status TeamStatus `json:"status"`
 }
 
-// TeamSpec is the spec for a Boo resource
+// TeamSpec is the spec for a team resource
 type TeamSpec struct {
-	Name string `json:"name"`
-	Size *int32 `json:"size"`
+	Name              string                   `json:"name"`
+	Environment       string                   `json:"environment"`
+	Description       string                   `json:"description"`
+	ResourceQuotaSpec corev1.ResourceQuotaSpec `json:"resourceQuota"`
 }
 
 // TeamStatus is the status for a Team resource

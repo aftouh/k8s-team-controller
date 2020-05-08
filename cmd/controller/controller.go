@@ -41,6 +41,10 @@ type TeamController struct {
 	nLister       coreListers.NamespaceLister
 	nListerSynced cache.InformerSynced
 
+	//resourceQuota
+	rqLister       coreListers.ResourceQuotaLister
+	rqListerSynced cache.InformerSynced
+
 	//workqueue
 	queue workqueue.RateLimitingInterface
 }
@@ -49,7 +53,8 @@ type TeamController struct {
 func NewController(tClientSet teamClientSet.Interface,
 	kClientSet kubernetes.Interface,
 	tInformer teamInformer.TeamInformer,
-	nInfomer core.NamespaceInformer) *TeamController {
+	nInformer core.NamespaceInformer,
+	rqInformer core.ResourceQuotaInformer) *TeamController {
 
 	tc := &TeamController{
 		kClientSet: kClientSet,
@@ -58,8 +63,11 @@ func NewController(tClientSet teamClientSet.Interface,
 		tLister:       tInformer.Lister(),
 		tListerSynced: tInformer.Informer().HasSynced,
 
-		nLister:       nInfomer.Lister(),
-		nListerSynced: nInfomer.Informer().HasSynced,
+		nLister:       nInformer.Lister(),
+		nListerSynced: nInformer.Informer().HasSynced,
+
+		rqLister:       rqInformer.Lister(),
+		rqListerSynced: rqInformer.Informer().HasSynced,
 
 		queue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 	}
@@ -68,6 +76,11 @@ func NewController(tClientSet teamClientSet.Interface,
 		AddFunc:    tc.addTeam,
 		UpdateFunc: tc.updateTeam,
 		DeleteFunc: tc.deleteTeam,
+	})
+
+	nInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: tc.updateNamespace,
+		DeleteFunc: tc.deleteNamespace,
 	})
 
 	return tc
@@ -104,6 +117,31 @@ func (tc *TeamController) deleteTeam(obj interface{}) {
 	tc.enqueue(t)
 }
 
+func (tc *TeamController) updateNamespace(old, cur interface{}) {
+	oldT := old.(*aftouh.Team)
+	curT := cur.(*aftouh.Team)
+	klog.V(4).Infof("Updating team %s", oldT.Name)
+	tc.enqueue(curT)
+}
+
+func (tc *TeamController) deleteNamespace(obj interface{}) {
+	t, ok := obj.(*aftouh.Team)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			return
+		}
+		t, ok = tombstone.Obj.(*aftouh.Team)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Team %#v", obj))
+			return
+		}
+	}
+	klog.V(4).Infof("Deleting team %s", t.Name)
+	tc.enqueue(t)
+}
+
 func (tc *TeamController) enqueue(t *aftouh.Team) {
 	var key string
 	var err error
@@ -118,11 +156,12 @@ func (tc *TeamController) enqueue(t *aftouh.Team) {
 
 //Run starts controller
 func (tc *TeamController) Run(workers int, stopCh <-chan struct{}) error {
+	defer utilruntime.HandleCrash()
 	klog.Info("starting team controller")
 	defer tc.queue.ShutDown()
 
 	klog.Info("waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, tc.tListerSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, tc.tListerSynced, tc.nListerSynced, tc.rqListerSynced); !ok {
 		return fmt.Errorf("failed to sync informer caches")
 	}
 	klog.Info("informers cache synced sucessfully")
