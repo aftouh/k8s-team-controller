@@ -15,12 +15,17 @@ import (
 	core "k8s.io/client-go/informers/core/v1"
 	coreListers "k8s.io/client-go/listers/core/v1"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 const (
@@ -47,6 +52,9 @@ type TeamController struct {
 
 	//workqueue
 	queue workqueue.RateLimitingInterface
+
+	//kubernetes event recorder
+	recorder record.EventRecorder
 }
 
 //NewController creates team controller
@@ -55,6 +63,10 @@ func NewController(tClientSet teamClientSet.Interface,
 	tInformer teamInformer.TeamInformer,
 	nInformer core.NamespaceInformer,
 	rqInformer core.ResourceQuotaInformer) *TeamController {
+
+	eventBrodcaster := record.NewBroadcaster()
+	eventBrodcaster.StartLogging(klog.Infof)
+	eventBrodcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: kClientSet.CoreV1().Events("")})
 
 	tc := &TeamController{
 		kClientSet: kClientSet,
@@ -69,7 +81,8 @@ func NewController(tClientSet teamClientSet.Interface,
 		rqLister:       rqInformer.Lister(),
 		rqListerSynced: rqInformer.Informer().HasSynced,
 
-		queue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		queue:    workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		recorder: eventBrodcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "team-controller"}),
 	}
 
 	tInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -118,28 +131,31 @@ func (tc *TeamController) deleteTeam(obj interface{}) {
 }
 
 func (tc *TeamController) updateNamespace(old, cur interface{}) {
-	oldT := old.(*aftouh.Team)
-	curT := cur.(*aftouh.Team)
-	klog.V(4).Infof("Updating team %s", oldT.Name)
-	tc.enqueue(curT)
+	// oldT := old.(*aftouh.Team)
+	// curT := cur.(*aftouh.Team)
+	// klog.V(4).Infof("Updating team %s", oldT.Name)
+	// tc.enqueue(curT)
+	//TODO
 }
 
 func (tc *TeamController) deleteNamespace(obj interface{}) {
-	t, ok := obj.(*aftouh.Team)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
-			return
-		}
-		t, ok = tombstone.Obj.(*aftouh.Team)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Team %#v", obj))
-			return
-		}
-	}
-	klog.V(4).Infof("Deleting team %s", t.Name)
-	tc.enqueue(t)
+	// t, ok := obj.(*aftouh.Team)
+	// if !ok {
+	// 	tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+	// 	if !ok {
+	// 		utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+	// 		return
+	// 	}
+	// 	t, ok = tombstone.Obj.(*aftouh.Team)
+	// 	if !ok {
+	// 		utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Team %#v", obj))
+	// 		return
+	// 	}
+	// }
+	// klog.V(4).Infof("Deleting team %s", t.Name)
+	// tc.enqueue(t)
+
+	//TODO
 }
 
 func (tc *TeamController) enqueue(t *aftouh.Team) {

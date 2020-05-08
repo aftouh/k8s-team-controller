@@ -15,6 +15,7 @@ const (
 	rqName = "team-default-rq"
 
 	messageResourceExists = "Resource %q already exists and is not managed by Team"
+	errResourceExists     = "ErrResourceExists"
 )
 
 func (tc *TeamController) sync(t *aftouh.Team) error {
@@ -47,7 +48,7 @@ func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
 
 	if !metav1.IsControlledBy(rq, t) {
 		msg := fmt.Sprintf(messageResourceExists, rq.Name)
-		//c.recorder.Event(foo, corev1.EventTypeWarning, ErrResourceExists, msg)
+		tc.recorder.Event(t, corev1.EventTypeWarning, errResourceExists, msg)
 		return fmt.Errorf(msg)
 	}
 	return nil
@@ -72,7 +73,7 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 	// Namespace should be created by this controller
 	if !metav1.IsControlledBy(namespace, t) {
 		msg := fmt.Sprintf(messageResourceExists, namespace.Name)
-		//c.recorder.Event(foo, corev1.EventTypeWarning, ErrResourceExists, msg)
+		tc.recorder.Event(t, corev1.EventTypeWarning, errResourceExists, msg)
 		return fmt.Errorf(msg)
 	}
 
