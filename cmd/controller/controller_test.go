@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	kinformers "k8s.io/client-go/informers"
 	kfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
@@ -14,6 +16,7 @@ import (
 	tinformers "github.com/aftouh/k8s-sample-controller/pkg/client/informers/externalversions"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
@@ -88,6 +91,20 @@ func (f *fixture) newTeamController() (*TeamController, tinformers.SharedInforme
 	return tc, tInformer, kInfomer
 }
 
+func (f *fixture) addObj(obj metav1.Object) {
+	switch obj := obj.(type) {
+	case *aftouhv1.Team:
+		f.tLister = append(f.tLister, obj)
+		f.tObjects = append(f.tObjects, obj)
+	case *corev1.Namespace:
+		f.nLister = append(f.nLister, obj)
+		f.kObjects = append(f.kObjects, obj)
+	case *corev1.ResourceQuota:
+		f.rqLister = append(f.rqLister, obj)
+		f.kObjects = append(f.kObjects, obj)
+	}
+}
+
 func (f *fixture) run(teamName string) {
 	f.runController(teamName, true, false)
 }
@@ -98,12 +115,6 @@ func (f *fixture) runExpectError(teamName string) {
 
 func (f *fixture) runController(teamName string, startInformers bool, expectError bool) {
 	tc, _, _ := f.newTeamController()
-	// if startInformers {
-	// 	stopCh := make(chan struct{})
-	// 	defer close(stopCh)
-	// 	tInfomer.Start(stopCh)
-	// 	kInfomer.Start(stopCh)
-	// }
 
 	err := tc.syncHandler(teamName)
 	if !expectError && err != nil {
@@ -202,11 +213,14 @@ func (f *fixture) expectUpdateNamespaceAction(n *corev1.Namespace) {
 	f.kActions = append(f.kActions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "namespaces"}, n))
 }
 
+func (f *fixture) expectUpdateResourceQuotaAction(rq *corev1.ResourceQuota) {
+	f.kActions = append(f.kActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "resourcequotas"}, rq.Namespace, rq))
+}
+
 func TestCreateNamespaceAndRQ(t *testing.T) {
 	f := newFixture(t)
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
-
-	f.tLister = append(f.tLister, team)
+	f.addObj(team)
 
 	f.expectCreateNamespaceAction(newNamespace(team))
 	f.expectCreateResourceQuotaAction(newResourceQuota(team))
@@ -214,13 +228,12 @@ func TestCreateNamespaceAndRQ(t *testing.T) {
 	f.run(team.Name)
 }
 
-func TestCreateResourceQuota(t *testing.T) {
+func TestCreateResourceQuotaOnly(t *testing.T) {
 	f := newFixture(t)
 
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
-	f.tLister = append(f.tLister, team)
-
-	f.nLister = append(f.nLister, newNamespace(team))
+	f.addObj(team)
+	f.addObj(newNamespace(team))
 
 	f.expectCreateResourceQuotaAction(newResourceQuota(team))
 
@@ -236,23 +249,78 @@ func TestDeletedTeam(t *testing.T) {
 func TestUpdateNamespaceLabels(t *testing.T) {
 	f := newFixture(t)
 
+	//Create team
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
-	f.tLister = append(f.tLister, team)
-	f.tObjects = append(f.tObjects, team)
+	f.addObj(team)
 
+	//Create namespace with invalid labels
 	ns := newNamespace(team)
 	ns.Labels["env"] = "prod"
 	ns.Labels["other"] = "other"
-	f.nLister = append(f.nLister, ns)
-	f.kObjects = append(f.kObjects, ns)
+	f.addObj(ns)
 
+	//Create team RS
 	rq := newResourceQuota(team)
-	f.rqLister = append(f.rqLister, rq)
-	f.kObjects = append(f.kObjects, rq)
+	f.addObj(rq)
 
+	//expect rq update
 	expectedNS := newNamespace(team)
 	expectedNS.Labels["other"] = "other"
 	f.expectUpdateNamespaceAction(expectedNS)
+
+	f.run(team.Name)
+}
+
+func TestUpdateRQLabels(t *testing.T) {
+	f := newFixture(t)
+
+	//Create team
+	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
+	f.addObj(team)
+
+	//Create team
+	f.addObj(newNamespace(team))
+
+	//Create namespace with invalid labels
+	rq := newResourceQuota(team)
+	rq.Labels["env"] = "prod"
+	rq.Labels["other"] = "other"
+	f.addObj(rq)
+
+	//expect rq update
+	expectedNS := newResourceQuota(team)
+	expectedNS.Labels["other"] = "other"
+	f.expectUpdateResourceQuotaAction(expectedNS)
+
+	f.run(team.Name)
+}
+
+func TestUpdateRQSpec(t *testing.T) {
+	f := newFixture(t)
+
+	//Create team
+	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{
+		Hard: corev1.ResourceList{
+			corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+		},
+	})
+	f.addObj(team)
+
+	//Create team
+	f.addObj(newNamespace(team))
+
+	//Create namespace with invalid labels
+	rq := newResourceQuota(team)
+	rq.Spec = corev1.ResourceQuotaSpec{
+		Hard: corev1.ResourceList{
+			corev1.ResourceCPU: *resource.NewQuantity(5, resource.DecimalSI),
+		},
+	}
+	f.addObj(rq)
+
+	//expect rq update
+	expectedNS := newResourceQuota(team)
+	f.expectUpdateResourceQuotaAction(expectedNS)
 
 	f.run(team.Name)
 }

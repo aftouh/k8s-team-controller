@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"k8s.io/klog"
@@ -95,8 +96,13 @@ func NewTeamController(tClientSet tclient.Interface,
 	})
 
 	nInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: tc.updateNamespace,
-		DeleteFunc: tc.deleteNamespace,
+		UpdateFunc: tc.updateObj,
+		DeleteFunc: tc.deleteObj,
+	})
+
+	rqInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: tc.updateObj,
+		DeleteFunc: tc.deleteObj,
 	})
 
 	return tc
@@ -104,28 +110,28 @@ func NewTeamController(tClientSet tclient.Interface,
 
 func (tc *TeamController) addTeam(obj interface{}) {
 	t := obj.(*aftouh.Team)
-	klog.V(4).Infof("Adding team %q", t.Name)
+	klog.V(4).Infof("Detect add of team %q", t.Name)
 	tc.enqueue(t)
 }
 
 func (tc *TeamController) updateTeam(old, cur interface{}) {
 	oldT := old.(*aftouh.Team)
 	curT := cur.(*aftouh.Team)
-	klog.V(4).Infof("Updating team %s", oldT.Name)
+	klog.V(4).Infof("Detect update of team %s", oldT.Name)
 	tc.enqueue(curT)
 }
 
-func (tc *TeamController) updateNamespace(old, cur interface{}) {
-	oldN := old.(*corev1.Namespace)
-	curN := cur.(*corev1.Namespace)
-	klog.V(4).Infof("Updating namespace %s", oldN.Name)
+func (tc *TeamController) updateObj(old, cur interface{}) {
+	oldObj := old.(metav1.Object)
+	curObj := cur.(metav1.Object)
+	klog.V(4).Infof("Detect update of %s", oldObj.GetSelfLink())
 
 	//No modification made
-	if oldN.ResourceVersion == curN.ResourceVersion {
+	if oldObj.GetResourceVersion() == curObj.GetResourceVersion() {
 		return
 	}
 
-	ownerRef := metav1.GetControllerOf(curN)
+	ownerRef := metav1.GetControllerOf(curObj)
 	// If this object is not owned by a Team, we should not do anything more with it
 	if ownerRef == nil || ownerRef.Kind != "Team" {
 		return
@@ -133,30 +139,37 @@ func (tc *TeamController) updateNamespace(old, cur interface{}) {
 
 	team, err := tc.tLister.Get(ownerRef.Name)
 	if err != nil {
-		klog.V(4).Infof("ignoring orphaned namespace %q' of team %q", curN.GetSelfLink(), ownerRef.Name)
+		klog.V(4).Infof("ignoring orphaned obj %q of team %q", curObj.GetSelfLink(), ownerRef.Name)
 		return
 	}
 
 	tc.enqueue(team)
 }
 
-func (tc *TeamController) deleteNamespace(obj interface{}) {
-	namespace, ok := obj.(*corev1.Namespace)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+func (tc *TeamController) deleteObj(del interface{}) {
+	var obj metav1.Object
+	switch del.(type) {
+	case *corev1.Namespace, *corev1.ResourceQuota:
+		obj = del.(metav1.Object)
+	default:
+		tombstone, ok := del.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
 			return
 		}
-		namespace, ok = tombstone.Obj.(*corev1.Namespace)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Namespace %#v", obj))
+
+		switch tombstone.Obj.(type) {
+		case *corev1.Namespace, *corev1.ResourceQuota:
+			obj = del.(metav1.Object)
+		default:
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Namespace or ResourceQuota %#v", obj))
 			return
 		}
 	}
-	klog.V(4).Infof("Deleting Namespace %s", namespace.Name)
 
-	ownerRef := metav1.GetControllerOf(namespace)
+	klog.V(4).Infof("Detect delete of %s", obj.GetSelfLink())
+
+	ownerRef := metav1.GetControllerOf(obj)
 	// If this object is not owned by a Team, we should not do anything more with it
 	if ownerRef == nil || ownerRef.Kind != "Team" {
 		return
@@ -164,7 +177,7 @@ func (tc *TeamController) deleteNamespace(obj interface{}) {
 
 	team, err := tc.tLister.Get(ownerRef.Name)
 	if err != nil {
-		klog.V(4).Infof("ignoring orphaned namespace %q' of team %q", namespace.GetSelfLink(), ownerRef.Name)
+		klog.V(4).Infof("ignoring orphaned obj %q of team %q", obj.GetSelfLink(), ownerRef.Name)
 		return
 	}
 
@@ -268,19 +281,8 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 	}
 
 	// Check namespace labels
-	expectedLabels := getTeamLabels(t)
-	var updateLabels bool
-	for k, v := range expectedLabels {
-		v2, ok := namespace.ObjectMeta.Labels[k]
-		if !ok || (v != v2) {
-			updateLabels = true
-			break
-		}
-	}
-	if updateLabels {
-		for k, v := range expectedLabels {
-			namespace.ObjectMeta.Labels[k] = v
-		}
+	if missingLabels(t, namespace) {
+		mergeLabels(t, namespace)
 		klog.V(2).Infof("Updating namespace %q labels", namespaceName)
 		_, err = tc.kClientSet.CoreV1().Namespaces().Update(namespace)
 	}
@@ -308,6 +310,16 @@ func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
 		tc.recorder.Event(t, corev1.EventTypeWarning, errResourceExists, msg)
 		return fmt.Errorf(msg)
 	}
+
+	//Check of external modification
+	expectedRq := newResourceQuota(t)
+	if !reflect.DeepEqual(expectedRq.Spec, rq.Spec) || missingLabels(t, rq) {
+		mergeLabels(t, rq)
+		rq.Spec = expectedRq.Spec
+		klog.V(2).Infof("Updating resourcequota %q", rq.Name)
+		_, err = tc.kClientSet.CoreV1().ResourceQuotas(namespaceName).Update(rq)
+	}
+
 	return nil
 }
 

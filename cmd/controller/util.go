@@ -17,6 +17,7 @@ func newResourceQuota(t *aftouhv1.Team) *corev1.ResourceQuota {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rqName,
 			Namespace: getTeamNamespace(t),
+			Labels:    getTeamLabels(t),
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(t, aftouhv1.SchemeGroupVersion.WithKind("Team")),
 			},
@@ -63,4 +64,30 @@ func getTeamLabels(t *aftouhv1.Team) map[string]string {
 		"team": t.Spec.Name,
 		"env":  t.Spec.Environment,
 	}
+}
+
+func missingLabels(t *aftouhv1.Team, obj metav1.Object) bool {
+	labels := obj.GetLabels()
+	if labels == nil {
+		return true
+	}
+	for k, v := range getTeamLabels(t) {
+		v2, ok := labels[k]
+		if !ok || (v != v2) {
+			return true
+
+		}
+	}
+	return false
+}
+
+func mergeLabels(t *aftouhv1.Team, obj metav1.Object) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	for k, v := range getTeamLabels(t) {
+		labels[k] = v
+	}
+	obj.SetLabels(labels)
 }
