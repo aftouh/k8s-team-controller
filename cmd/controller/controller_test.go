@@ -14,6 +14,7 @@ import (
 	tinformers "github.com/aftouh/k8s-sample-controller/pkg/client/informers/externalversions"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
 
@@ -40,17 +41,23 @@ type fixture struct {
 	kActions []core.Action
 	// Actions expected to happen on the team client.
 	tActions []core.Action
+
+	// Objects from here preloaded into NewSimpleFake.
+	kObjects []runtime.Object
+	tObjects []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
+	f.tObjects = []runtime.Object{}
+	f.kObjects = []runtime.Object{}
 	return f
 }
 
 func (f *fixture) newTeamController() (*TeamController, tinformers.SharedInformerFactory, kinformers.SharedInformerFactory) {
-	f.tClientSet = tfake.NewSimpleClientset()
-	f.kClientSet = kfake.NewSimpleClientset()
+	f.tClientSet = tfake.NewSimpleClientset(f.tObjects...)
+	f.kClientSet = kfake.NewSimpleClientset(f.kObjects...)
 
 	tInformer := tinformers.NewSharedInformerFactory(f.tClientSet, noResyncPeriodFunc())
 	kInfomer := kinformers.NewSharedInformerFactory(f.kClientSet, noResyncPeriodFunc())
@@ -191,6 +198,10 @@ func (f *fixture) expectCreateResourceQuotaAction(rq *corev1.ResourceQuota) {
 	f.kActions = append(f.kActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "resourcequotas"}, rq.Namespace, rq))
 }
 
+func (f *fixture) expectUpdateNamespaceAction(n *corev1.Namespace) {
+	f.kActions = append(f.kActions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "namespaces"}, n))
+}
+
 func TestCreateNamespaceAndRQ(t *testing.T) {
 	f := newFixture(t)
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
@@ -203,8 +214,45 @@ func TestCreateNamespaceAndRQ(t *testing.T) {
 	f.run(team.Name)
 }
 
+func TestCreateResourceQuota(t *testing.T) {
+	f := newFixture(t)
+
+	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
+	f.tLister = append(f.tLister, team)
+
+	f.nLister = append(f.nLister, newNamespace(team))
+
+	f.expectCreateResourceQuotaAction(newResourceQuota(team))
+
+	f.run(team.Name)
+}
+
 func TestDeletedTeam(t *testing.T) {
 	f := newFixture(t)
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
+	f.run(team.Name)
+}
+
+func TestUpdateNamespaceLabels(t *testing.T) {
+	f := newFixture(t)
+
+	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
+	f.tLister = append(f.tLister, team)
+	f.tObjects = append(f.tObjects, team)
+
+	ns := newNamespace(team)
+	ns.Labels["env"] = "prod"
+	ns.Labels["other"] = "other"
+	f.nLister = append(f.nLister, ns)
+	f.kObjects = append(f.kObjects, ns)
+
+	rq := newResourceQuota(team)
+	f.rqLister = append(f.rqLister, rq)
+	f.kObjects = append(f.kObjects, rq)
+
+	expectedNS := newNamespace(team)
+	expectedNS.Labels["other"] = "other"
+	f.expectUpdateNamespaceAction(expectedNS)
+
 	f.run(team.Name)
 }

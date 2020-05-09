@@ -251,7 +251,7 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 
 	//Namespace does not exist. Need to be created
 	if errors.IsNotFound(err) {
-		klog.Infof("Creating namespace %q for team %q", namespaceName, t.Name)
+		klog.V(2).Infof("Creating namespace %s", namespaceName)
 		_, err = tc.kClientSet.CoreV1().Namespaces().Create(newNamespace(t))
 		return err
 	}
@@ -267,7 +267,25 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 		return fmt.Errorf(msg)
 	}
 
-	return nil
+	// Check namespace labels
+	expectedLabels := getTeamLabels(t)
+	var updateLabels bool
+	for k, v := range expectedLabels {
+		v2, ok := namespace.ObjectMeta.Labels[k]
+		if !ok || (v != v2) {
+			updateLabels = true
+			break
+		}
+	}
+	if updateLabels {
+		for k, v := range expectedLabels {
+			namespace.ObjectMeta.Labels[k] = v
+		}
+		klog.V(2).Infof("Updating namespace %q labels", namespaceName)
+		_, err = tc.kClientSet.CoreV1().Namespaces().Update(namespace)
+	}
+
+	return err
 }
 
 func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
@@ -276,7 +294,7 @@ func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
 
 	//ResourceQuota does not exist. Need to be created
 	if errors.IsNotFound(err) {
-		klog.Infof("Creating resourceQuota %q for team %q", rqName, t.Name)
+		klog.V(2).Infof("Creating resourceQuota %q", rqName)
 		_, err = tc.kClientSet.CoreV1().ResourceQuotas(namespaceName).Create(newResourceQuota(t))
 		return err
 	}
