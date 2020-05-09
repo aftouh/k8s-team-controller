@@ -6,14 +6,15 @@ import (
 
 	"k8s.io/klog"
 
-	teamClientSet "github.com/aftouh/k8s-sample-controller/pkg/client/clientset/versioned"
-	teamInformer "github.com/aftouh/k8s-sample-controller/pkg/client/informers/externalversions/team/v1"
-	teamLister "github.com/aftouh/k8s-sample-controller/pkg/client/listers/team/v1"
+	tclient "github.com/aftouh/k8s-sample-controller/pkg/client/clientset/versioned"
+	tinformer "github.com/aftouh/k8s-sample-controller/pkg/client/informers/externalversions/team/v1"
+	tlister "github.com/aftouh/k8s-sample-controller/pkg/client/listers/team/v1"
 
 	aftouh "github.com/aftouh/k8s-sample-controller/pkg/apis/team/v1"
 
-	core "k8s.io/client-go/informers/core/v1"
-	coreListers "k8s.io/client-go/listers/core/v1"
+	//Core informers and listers
+	cinformer "k8s.io/client-go/informers/core/v1"
+	clister "k8s.io/client-go/listers/core/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,7 +31,9 @@ import (
 )
 
 const (
-	maxRetries = 10
+	maxRetries            = 10
+	messageResourceExists = "Resource %q already exists and is not managed by Team"
+	errResourceExists     = "ErrResourceExists"
 )
 
 //TeamController defines a kubernetes controller for team resource
@@ -39,16 +42,16 @@ type TeamController struct {
 	kClientSet kubernetes.Interface
 
 	//team
-	tClientSet    teamClientSet.Interface
-	tLister       teamLister.TeamLister
+	tClientSet    tclient.Interface
+	tLister       tlister.TeamLister
 	tListerSynced cache.InformerSynced
 
 	//namespace
-	nLister       coreListers.NamespaceLister
+	nLister       clister.NamespaceLister
 	nListerSynced cache.InformerSynced
 
 	//resourceQuota
-	rqLister       coreListers.ResourceQuotaLister
+	rqLister       clister.ResourceQuotaLister
 	rqListerSynced cache.InformerSynced
 
 	//workqueue
@@ -58,12 +61,12 @@ type TeamController struct {
 	recorder record.EventRecorder
 }
 
-//NewController creates team controller
-func NewController(tClientSet teamClientSet.Interface,
+//NewTeamController creates team controller
+func NewTeamController(tClientSet tclient.Interface,
 	kClientSet kubernetes.Interface,
-	tInformer teamInformer.TeamInformer,
-	nInformer core.NamespaceInformer,
-	rqInformer core.ResourceQuotaInformer) *TeamController {
+	tInformer tinformer.TeamInformer,
+	nInformer cinformer.NamespaceInformer,
+	rqInformer cinformer.ResourceQuotaInformer) *TeamController {
 
 	eventBrodcaster := record.NewBroadcaster()
 	eventBrodcaster.StartLogging(klog.Infof)
@@ -89,7 +92,6 @@ func NewController(tClientSet teamClientSet.Interface,
 	tInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    tc.addTeam,
 		UpdateFunc: tc.updateTeam,
-		DeleteFunc: tc.deleteTeam,
 	})
 
 	nInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -111,24 +113,6 @@ func (tc *TeamController) updateTeam(old, cur interface{}) {
 	curT := cur.(*aftouh.Team)
 	klog.V(4).Infof("Updating team %s", oldT.Name)
 	tc.enqueue(curT)
-}
-
-func (tc *TeamController) deleteTeam(obj interface{}) {
-	t, ok := obj.(*aftouh.Team)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
-			return
-		}
-		t, ok = tombstone.Obj.(*aftouh.Team)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Team %#v", obj))
-			return
-		}
-	}
-	klog.V(4).Infof("Deleting team %s", t.Name)
-	tc.enqueue(t)
 }
 
 func (tc *TeamController) updateNamespace(old, cur interface{}) {
@@ -244,15 +228,69 @@ func (tc *TeamController) syncHandler(key string) error {
 	}()
 
 	team, err := tc.tLister.Get(key)
-	if errors.IsNotFound(err) {
-		klog.V(2).Infof("Team %v has been deleted", key)
-		return nil
+	switch {
+	case errors.IsNotFound(err):
+		klog.V(4).Infof("Team %v has been deleted", key)
+		err = nil
+	case err != nil:
+		err = fmt.Errorf("Unable to retrieve team %v from store: %v", key, err)
+	default:
+		t := team.DeepCopy()
+		err = tc.syncNamespace(t)
+		if err == nil {
+			err = tc.syncResourceQuota(t)
+		}
 	}
+
+	return err
+}
+
+func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
+	namespaceName := getTeamNamespace(t)
+	namespace, err := tc.nLister.Get(namespaceName)
+
+	//Namespace does not exist. Need to be created
+	if errors.IsNotFound(err) {
+		klog.Infof("Creating namespace %q for team %q", namespaceName, t.Name)
+		_, err = tc.kClientSet.CoreV1().Namespaces().Create(newNamespace(t))
+		return err
+	}
+
 	if err != nil {
 		return err
 	}
 
-	return tc.sync(team.DeepCopy())
+	// Namespace should be created by this controller
+	if !metav1.IsControlledBy(namespace, t) {
+		msg := fmt.Sprintf(messageResourceExists, namespace.Name)
+		tc.recorder.Event(t, corev1.EventTypeWarning, errResourceExists, msg)
+		return fmt.Errorf(msg)
+	}
+
+	return nil
+}
+
+func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
+	namespaceName := getTeamNamespace(t)
+	rq, err := tc.rqLister.ResourceQuotas(namespaceName).Get(rqName)
+
+	//ResourceQuota does not exist. Need to be created
+	if errors.IsNotFound(err) {
+		klog.Infof("Creating resourceQuota %q for team %q", rqName, t.Name)
+		_, err = tc.kClientSet.CoreV1().ResourceQuotas(namespaceName).Create(newResourceQuota(t))
+		return err
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if !metav1.IsControlledBy(rq, t) {
+		msg := fmt.Sprintf(messageResourceExists, rq.Name)
+		tc.recorder.Event(t, corev1.EventTypeWarning, errResourceExists, msg)
+		return fmt.Errorf(msg)
+	}
+	return nil
 }
 
 func (tc *TeamController) handleErr(err error, key interface{}) {
