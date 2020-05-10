@@ -47,7 +47,7 @@ func main() {
 		klog.Fatalf("Failed building team client. %s", err)
 	}
 
-	teams, err := tClientSet.AftouhV1().Teams("default").List(metav1.ListOptions{})
+	teams, err := tClientSet.AftouhV1().Teams().List(metav1.ListOptions{})
 	if err != nil {
 		klog.Fatalf("Failed getting team list. %s", err)
 	}

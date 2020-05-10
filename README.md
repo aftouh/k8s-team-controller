@@ -1,29 +1,36 @@
 # k8s-teams-controller
 
-`k8s-teams-controller` is a k8s sample controller for `teams.aftouh.io` resource.
+`k8s-teams-controller` is a kubernetes controller for the `teams.aftouh.io` CRD.  
+Team is a cluster scoped resource that manages team's namespace and resourcequota.
 
-<img src="./logo/kubernetes.svg" width="300">
+<img src="./logo/kubernetes.svg" width="100">
 
-## Motivation
-
-This project is created to build a sample of a kubernetes controller to manage a CRD called `teams.aftouh.io`.  
-It is inspired from this nice [sample controller](https://github.com/kubernetes/sample-controller) 🙏.
+Sample:
 
 ```yaml
 apiVersion: aftouh.io/v1
 kind: Team
 metadata:
-  name: team1
+  name: poc-dev
 spec:
-  name: teamOne
-  size: 3
+  name: poc
+  environment: dev
+  description: "poc team is creating a product ..."
+  resourceQuota:
+    hard:
+      pods: "4"
 ```
+
+## Motivation
+
+This project is created to build a sample of a kubernetes controller and understand what's under the hood.  
+This nice [sample](https://github.com/kubernetes/sample-controller) helped me so much 🙏.
 
 ## Development
 
 ### Tools
 
-- [k8s.io/code-generator](https://github.com/kubernetes/code-generator): to generate deepcopy,clientset,infrmers and listers of the team crd
+- [k8s.io/code-generator](https://github.com/kubernetes/code-generator): to generate deepcopy,clientset,informers and listers of the team CRD
 - [ko](https://github.com/google/ko): to build and deploy controller in the kubernetes cluster
 
 ### Run teams controller
@@ -31,10 +38,10 @@ spec:
 Run controller locally:
 
 ```bash
-go run cmd/*.go -kubeconfig ~/.kube/config -v 5
+go run ./cmd/controller -kubeconfig ~/.kube/config -v 5
 ```
 
-Run within a kubernetes cluster:
+Run within a kubernetes cluster using `ko`:
 
 ```bash
 # login to dockerhub
@@ -45,11 +52,17 @@ export KO_DOCKER_REPO=ftahmed
 ko apply -f config/
 ```
 
-### code generation
+### Generate code
 
-Command for generating deepcopy,clientset,infrmers and listers of the team resource
+Command for generating deepcopy,clientset,infromers and listers of the team resource
 
 ```bash
 go mod vendor
 ./hack/update-codegen.sh
+```
+
+### Run tests
+
+```bash
+go test -v ./...
 ```

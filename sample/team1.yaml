@@ -5,7 +5,7 @@ metadata:
 spec:
   name: poc
   environment: dev
-  description: "poc is create creating a product called hello-world"
+  description: "poc is  creating a product ..."
   resourceQuota:
     hard:
       pods: "4"

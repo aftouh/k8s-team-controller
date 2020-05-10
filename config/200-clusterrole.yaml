@@ -3,11 +3,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: aftouh-teams-admin
 rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "create", "update", "delete", "patch", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments/finalizers"]
+  - apiGroups: [""]
+    resources: ["namespaces", "resourcequotas"]
     verbs: ["get", "list", "create", "update", "delete", "patch", "watch"]
   - apiGroups: ["aftouh.io"]
     resources: ["teams"]

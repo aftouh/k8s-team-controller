@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-default-rq
+spec:
+  hard:
+    pods: "4"
