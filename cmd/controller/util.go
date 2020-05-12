@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	aftouhv1 "github.com/aftouh/k8s-sample-controller/pkg/apis/team/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 const (
@@ -90,4 +93,48 @@ func mergeLabels(t *aftouhv1.Team, obj metav1.Object) {
 		labels[k] = v
 	}
 	obj.SetLabels(labels)
+}
+
+func (tc *TeamController) calculateTeamStatus(t *aftouhv1.Team) (aftouhv1.TeamStatus, error) {
+	var ts aftouhv1.TeamStatus
+	//Get namespace
+	allNS, err := tc.nLister.List(labels.Everything())
+	if err != nil {
+		return ts, err
+	}
+	var ownedNS []*corev1.Namespace
+	buf := new(bytes.Buffer)
+	for _, ns := range allNS {
+		if !metav1.IsControlledBy(ns, t) {
+			continue
+		}
+		if len(ownedNS) > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(ns.Name)
+		ownedNS = append(ownedNS, ns)
+	}
+
+	switch len(ownedNS) {
+	case 0:
+		return ts, nil
+	case 1:
+		ts.Namespace = ownedNS[0].Name
+		rq, err := tc.rqLister.ResourceQuotas(ts.Namespace).Get(rqName)
+
+		switch {
+		case errors.IsNotFound(err):
+			ts.ResourceQuota = ""
+		case err != nil:
+			return ts, fmt.Errorf("Unable to get ResourceQuota %s/%s from cache: %v", ts.Namespace, rq.Name, err)
+		case !metav1.IsControlledBy(rq, t):
+			ts.ResourceQuota = ""
+		default:
+			ts.ResourceQuota = rqName
+		}
+	default:
+		return ts, fmt.Errorf("Team %q owns more than one namespace: %v", t.Name, string(buf.Bytes()))
+	}
+
+	return ts, nil
 }

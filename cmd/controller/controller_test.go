@@ -126,7 +126,7 @@ func (f *fixture) runController(teamName string, startInformers bool, expectErro
 	tActions := f.tClientSet.Actions()
 	for i, action := range tActions {
 		if len(f.tActions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(tActions)-len(f.tActions), tActions[i:])
+			f.t.Errorf("%d unexpected team actions: %+v", len(tActions)-len(f.tActions), tActions[i:])
 			break
 		}
 
@@ -135,13 +135,13 @@ func (f *fixture) runController(teamName string, startInformers bool, expectErro
 	}
 
 	if len(f.tActions) > len(tActions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.tActions)-len(tActions), f.tActions[len(tActions):])
+		f.t.Errorf("%d additional expected team actions:%+v", len(f.tActions)-len(tActions), f.tActions[len(tActions):])
 	}
 
 	kActions := f.kClientSet.Actions()
 	for i, action := range kActions {
 		if len(f.kActions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(kActions)-len(f.kActions), kActions[i:])
+			f.t.Errorf("%d unexpected kubernetes actions: %+v", len(kActions)-len(f.kActions), kActions[i:])
 			break
 		}
 
@@ -150,7 +150,7 @@ func (f *fixture) runController(teamName string, startInformers bool, expectErro
 	}
 
 	if len(f.kActions) > len(kActions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.kActions)-len(kActions), f.kActions[len(kActions):])
+		f.t.Errorf("%d additional expected kubernetes actions:%+v", len(f.kActions)-len(kActions), f.kActions[len(kActions):])
 	}
 }
 
@@ -217,25 +217,40 @@ func (f *fixture) expectUpdateResourceQuotaAction(rq *corev1.ResourceQuota) {
 	f.kActions = append(f.kActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "resourcequotas"}, rq.Namespace, rq))
 }
 
-func TestCreateNamespaceAndRQ(t *testing.T) {
+func (f *fixture) expectUpdateTeamStatus(t *aftouhv1.Team) {
+	f.tActions = append(f.tActions, core.NewRootUpdateAction(schema.GroupVersionResource{
+		Resource: "teams",
+		Group:    aftouhv1.SchemeGroupVersion.Group,
+		Version:  aftouhv1.SchemeGroupVersion.Version,
+	}, t))
+}
+
+func TestCreateNamespace(t *testing.T) {
 	f := newFixture(t)
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
 	f.addObj(team)
 
 	f.expectCreateNamespaceAction(newNamespace(team))
-	f.expectCreateResourceQuotaAction(newResourceQuota(team))
 
-	f.run(team.Name)
+	//We expect error because the new namespace is not visible by lister
+	//so resourcequota syncing return not found error
+	f.runExpectError(team.Name)
 }
 
-func TestCreateResourceQuotaOnly(t *testing.T) {
+func TestCreateResourceQuota(t *testing.T) {
 	f := newFixture(t)
 
 	team := newTeam("test", "test desciption", "dev", corev1.ResourceQuotaSpec{})
+
 	f.addObj(team)
-	f.addObj(newNamespace(team))
+	ns := newNamespace(team)
+	ns.Status.Phase = corev1.NamespaceActive
+	f.addObj(ns)
 
 	f.expectCreateResourceQuotaAction(newResourceQuota(team))
+
+	team.Status.Namespace = "team-test-dev"
+	f.expectUpdateTeamStatus(team)
 
 	f.run(team.Name)
 }
@@ -257,6 +272,7 @@ func TestUpdateNamespaceLabels(t *testing.T) {
 	ns := newNamespace(team)
 	ns.Labels["env"] = "prod"
 	ns.Labels["other"] = "other"
+	ns.Status.Phase = corev1.NamespaceActive
 	f.addObj(ns)
 
 	//Create team RS
@@ -266,7 +282,12 @@ func TestUpdateNamespaceLabels(t *testing.T) {
 	//expect rq update
 	expectedNS := newNamespace(team)
 	expectedNS.Labels["other"] = "other"
+	expectedNS.Status.Phase = corev1.NamespaceActive
 	f.expectUpdateNamespaceAction(expectedNS)
+
+	team.Status.Namespace = "team-test-dev"
+	team.Status.ResourceQuota = rqName
+	f.expectUpdateTeamStatus(team)
 
 	f.run(team.Name)
 }
@@ -291,6 +312,10 @@ func TestUpdateRQLabels(t *testing.T) {
 	expectedNS := newResourceQuota(team)
 	expectedNS.Labels["other"] = "other"
 	f.expectUpdateResourceQuotaAction(expectedNS)
+
+	team.Status.Namespace = "team-test-dev"
+	team.Status.ResourceQuota = rqName
+	f.expectUpdateTeamStatus(team)
 
 	f.run(team.Name)
 }
@@ -321,6 +346,10 @@ func TestUpdateRQSpec(t *testing.T) {
 	//expect rq update
 	expectedNS := newResourceQuota(team)
 	f.expectUpdateResourceQuotaAction(expectedNS)
+
+	team.Status.Namespace = "team-test-dev"
+	team.Status.ResourceQuota = rqName
+	f.expectUpdateTeamStatus(team)
 
 	f.run(team.Name)
 }

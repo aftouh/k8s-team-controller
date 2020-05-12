@@ -23,6 +23,7 @@ type TeamsGetter interface {
 type TeamInterface interface {
 	Create(*v1.Team) (*v1.Team, error)
 	Update(*v1.Team) (*v1.Team, error)
+	UpdateStatus(*v1.Team) (*v1.Team, error)
 	Delete(name string, options *metav1.DeleteOptions) error
 	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
 	Get(name string, options metav1.GetOptions) (*v1.Team, error)
@@ -103,6 +104,21 @@ func (c *teams) Update(team *v1.Team) (result *v1.Team, err error) {
 	err = c.client.Put().
 		Resource("teams").
 		Name(team.Name).
+		Body(team).
+		Do().
+		Into(result)
+	return
+}
+
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+
+func (c *teams) UpdateStatus(team *v1.Team) (result *v1.Team, err error) {
+	result = &v1.Team{}
+	err = c.client.Put().
+		Resource("teams").
+		Name(team.Name).
+		SubResource("status").
 		Body(team).
 		Do().
 		Into(result)

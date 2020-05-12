@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	maxRetries            = 10
+	maxRetries            = 15
 	messageResourceExists = "Resource %q already exists and is not managed by Team"
 	errResourceExists     = "ErrResourceExists"
 )
@@ -196,14 +196,14 @@ func (tc *TeamController) enqueue(t *aftouh.Team) {
 //Run starts controller
 func (tc *TeamController) Run(workers int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
-	klog.Info("starting team controller")
+	klog.Info("Starting team controller")
 	defer tc.queue.ShutDown()
 
-	klog.Info("waiting for informer caches to sync")
+	klog.Info("Waiting for informer caches to sync")
 	if ok := cache.WaitForCacheSync(stopCh, tc.tListerSynced, tc.nListerSynced, tc.rqListerSynced); !ok {
 		return fmt.Errorf("failed to sync informer caches")
 	}
-	klog.Info("informers cache synced sucessfully")
+	klog.Info("Informers cache synced sucessfully")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(tc.runWorker, time.Second, stopCh)
@@ -249,9 +249,22 @@ func (tc *TeamController) syncHandler(key string) error {
 		err = fmt.Errorf("Unable to retrieve team %v from store: %v", key, err)
 	default:
 		t := team.DeepCopy()
-		err = tc.syncNamespace(t)
-		if err == nil {
-			err = tc.syncResourceQuota(t)
+		if err := tc.syncNamespace(t); err != nil {
+			return fmt.Errorf("Failed syncing team namespace: %v", err)
+		}
+
+		if err := tc.syncResourceQuota(t); err != nil {
+			return fmt.Errorf("Failed syncing team resourcequota: %v", err)
+		}
+
+		teamStatus, err := tc.calculateTeamStatus(t)
+		if err != nil {
+			return fmt.Errorf("Failed calculating team status: %v", err)
+		}
+		t.Status = teamStatus
+		_, err = tc.tClientSet.AftouhV1().Teams().Update(t)
+		if err != nil {
+			return fmt.Errorf("Failed updating team status: %v", err)
 		}
 	}
 
@@ -264,13 +277,33 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 
 	//Namespace does not exist. Need to be created
 	if errors.IsNotFound(err) {
-		klog.V(2).Infof("Creating namespace %s", namespaceName)
-		_, err = tc.kClientSet.CoreV1().Namespaces().Create(newNamespace(t))
+		var err error
+		//Delete old namespace if exists
+		oldNamespaceName := t.Status.Namespace
+		if oldNamespaceName != "" {
+			oldNS, err := tc.nLister.Get(oldNamespaceName)
+			switch {
+			case errors.IsNotFound(err):
+				klog.V(4).Infof("Old namespace %q has been deleted", oldNamespaceName)
+			case err != nil:
+				err = fmt.Errorf("Unable to retrieve namespace %q from store: %s", oldNamespaceName, err)
+			case !metav1.IsControlledBy(oldNS, t):
+				klog.Warningf("Namespace %q is not owned by team %q", oldNamespaceName, t.Name)
+			default:
+				klog.Warningf("Deleting namespace %q", oldNamespaceName)
+				err = tc.kClientSet.CoreV1().Namespaces().Delete(t.Status.Namespace, &metav1.DeleteOptions{})
+			}
+		}
+
+		if err == nil {
+			klog.V(2).Infof("Creating namespace %q", namespaceName)
+			_, err = tc.kClientSet.CoreV1().Namespaces().Create(newNamespace(t))
+		}
 		return err
 	}
 
 	if err != nil {
-		return err
+		return fmt.Errorf("Unable to retrieve namespace %q from store: %s", namespace, err)
 	}
 
 	// Namespace should be created by this controller
@@ -292,8 +325,15 @@ func (tc *TeamController) syncNamespace(t *aftouh.Team) error {
 
 func (tc *TeamController) syncResourceQuota(t *aftouh.Team) error {
 	namespaceName := getTeamNamespace(t)
-	rq, err := tc.rqLister.ResourceQuotas(namespaceName).Get(rqName)
+	ns, err := tc.nLister.Get(namespaceName)
+	if err != nil {
+		return err
+	}
+	if ns.Status.Phase != corev1.NamespaceActive {
+		return fmt.Errorf("Namespace %q is not active yet", namespaceName)
+	}
 
+	rq, err := tc.rqLister.ResourceQuotas(namespaceName).Get(rqName)
 	//ResourceQuota does not exist. Need to be created
 	if errors.IsNotFound(err) {
 		klog.V(2).Infof("Creating resourceQuota %q", rqName)
@@ -330,7 +370,7 @@ func (tc *TeamController) handleErr(err error, key interface{}) {
 	}
 
 	if tc.queue.NumRequeues(key) < maxRetries { //Retry
-		klog.V(2).Infof("Error syncing team %v: %v", key, err)
+		klog.V(4).Infof("Error syncing team %v: %v", key, err)
 		tc.queue.AddRateLimited(key)
 		return
 	}

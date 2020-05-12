@@ -78,6 +78,17 @@ func (c *FakeTeams) Update(team *teamv1.Team) (result *teamv1.Team, err error) {
 	return obj.(*teamv1.Team), err
 }
 
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+func (c *FakeTeams) UpdateStatus(team *teamv1.Team) (*teamv1.Team, error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootUpdateSubresourceAction(teamsResource, "status", team), &teamv1.Team{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*teamv1.Team), err
+}
+
 // Delete takes name of the team and deletes it. Returns an error if one occurs.
 func (c *FakeTeams) Delete(name string, options *v1.DeleteOptions) error {
 	_, err := c.Fake.
